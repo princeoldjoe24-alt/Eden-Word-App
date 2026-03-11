@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Users, MessageSquare, Heart, Share2, MoreHorizontal, Sparkles, Search } from 'lucide-react';
+import { Users, MessageSquare, Heart, Share2, MoreHorizontal, Sparkles, Search, Volume2, VolumeX } from 'lucide-react';
 import { UserProfile } from '../types';
 import { cn } from '../lib/utils';
+import { generateSpeech } from '../services/gemini';
+import { useEffect } from 'react';
 
 interface Post {
   id: string;
@@ -67,6 +69,44 @@ interface CommunityHubProps {
 export default function CommunityHub({ profile }: CommunityHubProps) {
   const [activeTab, setActiveTab] = useState<'feed' | 'members' | 'groups'>('feed');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
+  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
+
+  const handleListen = async (text: string, id: string) => {
+    if (isSpeaking === id) {
+      audio?.pause();
+      setIsSpeaking(null);
+      return;
+    }
+
+    setIsSpeaking(id);
+    try {
+      const base64Audio = await generateSpeech(text.replace(/[*#]/g, ''));
+      if (base64Audio) {
+        const audioBlob = await fetch(`data:audio/wav;base64,${base64Audio}`).then(res => res.blob());
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const newAudio = new Audio(audioUrl);
+        setAudio(newAudio);
+        newAudio.play();
+        newAudio.onended = () => {
+          setIsSpeaking(null);
+          URL.revokeObjectURL(audioUrl);
+        };
+      }
+    } catch (err) {
+      console.error("Error playing audio:", err);
+      setIsSpeaking(null);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audio) {
+        audio.pause();
+        setAudio(null);
+      }
+    };
+  }, [audio]);
 
   return (
     <div className="max-w-4xl mx-auto p-6 md:p-12 space-y-12">
@@ -168,6 +208,15 @@ export default function CommunityHub({ profile }: CommunityHubProps) {
                       <button className="flex items-center gap-2 text-white/40 hover:text-eden-leaf transition-colors">
                         <MessageSquare size={18} />
                         <span className="text-xs font-bold">{post.comments}</span>
+                      </button>
+                      <button 
+                        onClick={() => handleListen(post.content, post.id)}
+                        className={cn(
+                          "flex items-center gap-2 transition-colors",
+                          isSpeaking === post.id ? "text-eden-gold animate-pulse" : "text-white/40 hover:text-eden-gold"
+                        )}
+                      >
+                        {isSpeaking === post.id ? <VolumeX size={18} /> : <Volume2 size={18} />}
                       </button>
                     </div>
                     <button className="text-white/40 hover:text-white transition-colors">

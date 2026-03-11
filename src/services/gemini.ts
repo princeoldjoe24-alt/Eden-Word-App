@@ -1,7 +1,58 @@
 import { GoogleGenAI, ThinkingLevel, Modality } from "@google/genai";
 import { UserProfile, DailyContent } from "../types";
+import { CHURCH_GROWTH_MENTORS } from "../data/mentors";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+const MENTOR_INSTRUCTION = `
+  CRITICAL: Your wisdom, insights, and theological perspective MUST be influenced by and aligned with the teachings and ministry philosophies of the following 101 influential Church Growth mentors and apostolic leaders:
+  ${CHURCH_GROWTH_MENTORS}
+  
+  PRIMARY TEACHING MODELS:
+  You must especially model the teaching styles, theological depth, and kingdom principles of **T.D. Jakes**, **Joshua Selman**, and **Myles Munroe**. Their perspectives on purpose, leadership, and the power of the Word should be the primary influence on your "Your Word for today" reflections and theological deep dives.
+  
+  STYLE GUIDELINES:
+  - GENERATE FAST: Provide direct, concise, and powerful responses.
+  - STRUCTURE: Use clear paragraphs for readability.
+  - PRIVACY: Do not constantly repeat the user's name or specific location in the generated text. Focus on the spiritual truth.
+`;
+
+// Helper to create a WAV header for raw PCM 16-bit mono 24kHz
+function createWavHeader(pcmLength: number): Uint8Array {
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+
+  // RIFF identifier
+  view.setUint32(0, 0x52494646, false); // "RIFF"
+  // file length
+  view.setUint32(4, 36 + pcmLength, true);
+  // RIFF type
+  view.setUint32(8, 0x57415645, false); // "WAVE"
+
+  // format chunk identifier
+  view.setUint32(12, 0x666d7420, false); // "fmt "
+  // format chunk length
+  view.setUint32(16, 16, true);
+  // sample format (1 is PCM)
+  view.setUint16(20, 1, true);
+  // channel count
+  view.setUint16(22, 1, true);
+  // sample rate
+  view.setUint32(24, 24000, true);
+  // byte rate (sample rate * block align)
+  view.setUint32(28, 24000 * 2, true);
+  // block align (channel count * bytes per sample)
+  view.setUint16(32, 2, true);
+  // bits per sample
+  view.setUint16(34, 16, true);
+
+  // data chunk identifier
+  view.setUint32(36, 0x64617461, false); // "data"
+  // data chunk length
+  view.setUint32(40, pcmLength, true);
+
+  return new Uint8Array(header);
+}
 
 // Simple exponential backoff retry helper
 async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
@@ -39,6 +90,8 @@ export async function generatePersonalizedStudy(profile: UserProfile, theme: str
     
     Theme: ${theme}
     
+    ${MENTOR_INSTRUCTION}
+
     CRITICAL REQUIREMENTS:
     1. LANGUAGE: The entire response MUST be in ${profile.language}.
     2. CENTER ON CHRIST JESUS: Every part of the study should point back to the person, work, and teachings of Jesus Christ.
@@ -67,6 +120,7 @@ export async function generatePersonalizedStudy(profile: UserProfile, theme: str
       contents: prompt,
       config: {
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       },
     });
     return JSON.parse(response.text || "{}") as DailyContent;
@@ -91,6 +145,7 @@ export async function generateDailyVerse(profile: UserProfile): Promise<{ verse:
       contents: `Provide an inspiring Bible verse for today in ${profile.language}. Always use the NKJV version. Return JSON with 'verse' and 'reference'.`,
       config: {
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       },
     });
     return JSON.parse(response.text || "{}");
@@ -109,6 +164,8 @@ export async function getQuickWisdom(profile: UserProfile, question: string): Pr
     - Maturity: ${profile.maturity}
     - Language: ${profile.language}
     
+    ${MENTOR_INSTRUCTION}
+
     Provide a quick, encouraging, and biblically sound answer to this question: "${question}"
     Use the NKJV version for any scripture quoted.
     Keep it concise (under 100 words).
@@ -119,6 +176,9 @@ export async function getQuickWisdom(profile: UserProfile, question: string): Pr
   const response = await ai.models.generateContent({
     model: "gemini-3.1-flash-lite-preview",
     contents: prompt,
+    config: {
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+    }
   });
 
   return response.text || "I'm sorry, I couldn't find the wisdom you're looking for right now.";
@@ -133,6 +193,8 @@ export async function getTheologicalDeepDive(profile: UserProfile, question: str
     - Maturity: ${profile.maturity}
     - Language: ${profile.language}
     
+    ${MENTOR_INSTRUCTION}
+
     Provide a deep, thoughtful, and comprehensive theological exploration of this question: "${question}"
     Always use the NKJV version for scripture.
     Address the nuances of the topic while remaining centered on the Gospel of Jesus Christ.
@@ -161,6 +223,8 @@ export async function getStudyInsight(profile: UserProfile, content: DailyConten
     - Maturity: ${profile.maturity}
     - Language: ${profile.language}
     
+    ${MENTOR_INSTRUCTION}
+
     Current Study:
     - Verse: ${content.verse}
     - Reference: ${content.reference}
@@ -195,6 +259,8 @@ export async function generatePrayerFromRequest(profile: UserProfile, request: s
     - Maturity: ${profile.maturity}
     - Language: ${profile.language}
     
+    ${MENTOR_INSTRUCTION}
+
     The user has shared this prayer request: "${request}"
     
     Write a heartfelt, biblically grounded prayer in the first person (using "I", "me", "my") that the user can pray.
@@ -206,6 +272,9 @@ export async function generatePrayerFromRequest(profile: UserProfile, request: s
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: prompt,
+    config: {
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+    }
   });
 
   return response.text || "Heavenly Father, we lift up this heart's cry to You, trusting in Your perfect love and timing. Amen.";
@@ -220,6 +289,8 @@ export async function generateIntercessoryFocus(profile: UserProfile): Promise<{
   }
 
   const prompt = `
+    ${MENTOR_INSTRUCTION}
+
     Generate a daily intercessory prayer focus for a Christian app.
     The focus should be global or community-oriented (e.g., the persecuted church, world leaders, local schools, the environment, etc.).
     
@@ -237,6 +308,7 @@ export async function generateIntercessoryFocus(profile: UserProfile): Promise<{
       contents: prompt,
       config: {
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       },
     });
     return JSON.parse(response.text || "{}");
@@ -281,6 +353,8 @@ export async function generateScriptureImage(verse: string, reference: string): 
 
 export async function suggestKingdomGoals(profile: Partial<UserProfile>): Promise<string[]> {
   const prompt = `
+    ${MENTOR_INSTRUCTION}
+
     Based on the following user profile, suggest 5 specific, meaningful "Kingdom Goals" (spiritual growth goals) for a Christian study app.
     Profile:
     - Age Group: ${profile.ageGroup}
@@ -299,6 +373,7 @@ export async function suggestKingdomGoals(profile: Partial<UserProfile>): Promis
       contents: prompt,
       config: {
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       },
     });
     return JSON.parse(response.text || "[]");
@@ -321,6 +396,21 @@ export async function generateSpeech(text: string): Promise<string> {
     },
   });
 
-  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  return base64Audio || "";
+  const base64Pcm = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  if (!base64Pcm) return "";
+
+  // Convert base64 PCM to Uint8Array
+  const pcmData = Uint8Array.from(atob(base64Pcm), c => c.charCodeAt(0));
+  
+  // Create WAV header
+  const header = createWavHeader(pcmData.length);
+  
+  // Combine header and PCM data
+  const wavData = new Uint8Array(header.length + pcmData.length);
+  wavData.set(header);
+  wavData.set(pcmData, header.length);
+
+  // Convert back to base64
+  const binary = Array.from(wavData).map(b => String.fromCharCode(b)).join('');
+  return btoa(binary);
 }

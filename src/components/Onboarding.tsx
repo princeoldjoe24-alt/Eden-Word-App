@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, AgeGroup, SpiritualMaturity, Denomination } from '../types';
 import { cn } from '../lib/utils';
-import { ArrowRight, Check, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowRight, Check, Sparkles, Loader2, Volume2, VolumeX } from 'lucide-react';
 import { COUNTRIES, LANGUAGES } from '../data/constants';
-import { suggestKingdomGoals } from '../services/gemini';
+import { suggestKingdomGoals, generateSpeech } from '../services/gemini';
+import { useEffect } from 'react';
 
 interface OnboardingProps {
   onComplete: (profile: UserProfile) => void;
@@ -26,6 +27,44 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   });
   const [suggestedGoals, setSuggestedGoals] = useState<string[]>([]);
   const [loadingGoals, setLoadingGoals] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
+
+  const handleListen = async (text: string) => {
+    if (isSpeaking) {
+      audio?.pause();
+      setIsSpeaking(false);
+      return;
+    }
+
+    setIsSpeaking(true);
+    try {
+      const base64Audio = await generateSpeech(text);
+      if (base64Audio) {
+        const audioBlob = await fetch(`data:audio/wav;base64,${base64Audio}`).then(res => res.blob());
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const newAudio = new Audio(audioUrl);
+        setAudio(newAudio);
+        newAudio.play();
+        newAudio.onended = () => {
+          setIsSpeaking(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+      }
+    } catch (err) {
+      console.error("Error playing audio:", err);
+      setIsSpeaking(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audio) {
+        audio.pause();
+        setAudio(null);
+      }
+    };
+  }, [audio]);
 
   const next = () => {
     if (step === 5) { // After denomination, suggest goals
@@ -205,9 +244,21 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             key={step}
+            className="relative"
           >
             <h1 className="text-4xl font-serif mb-2 text-white">{currentStep.title}</h1>
             <p className="text-eden-leaf/60">{currentStep.description}</p>
+            {step === 0 && (
+              <button 
+                onClick={() => handleListen(`${currentStep.title}. ${currentStep.description}`)}
+                className={cn(
+                  "absolute -right-12 top-0 p-2 rounded-full transition-all",
+                  isSpeaking ? "bg-eden-gold text-white animate-pulse" : "text-eden-leaf/40 hover:text-eden-gold"
+                )}
+              >
+                {isSpeaking ? <VolumeX size={20} /> : <Volume2 size={20} />}
+              </button>
+            )}
           </motion.div>
         </div>
 
